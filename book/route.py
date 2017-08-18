@@ -11,9 +11,11 @@ route = [
 
 route += [
     (r'/users', User.index),
+    (r'/users/<uid:\w{24}>', User.user),
+    (r'/users/<uid:\w{24}>/updatePassword', User.updatePassword),
     (r'/users/<objectid:\w{24}>/refreshSessionToken', User.refreshSessionToken),
     # (r'/users/me', User.index),
-    (r'/login', User.login)
+    (r'/login', User.login),
 ]
 #
 # route += [

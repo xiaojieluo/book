@@ -5,12 +5,60 @@ import logging
 import hashlib
 from sanic.exceptions import InvalidUsage
 from book.web import log
+import json as pyjson
+from book.web import error
+
 
 class APIHandler(HTTPMethodView):
 
-    # def __init__(self):
-    #     self.app = App(appid=)
-    #     pass
+    def query_constraint(self, requests):
+        '''
+        支持查询约束
+        '''
+        # TODO 文档编写
+        # 正常返回数组，出现错误返回元组， (200, 'This is error.')
+
+        args = requests.args
+
+        where = {}
+        if 'where' in requests.args:
+            where = requests.args.get('where')
+            if isinstance(where, str):
+                where = pyjson.loads(where)
+
+        order = args.get('order', '')
+        keys = args.get('keys', '')
+        exclude = []
+        only = []
+
+        if keys:
+            keys = keys.split(',')
+            for k in keys:
+                if k[0] == '-':
+                    exclude.append(k[1:])
+                else:
+                    only.append(k)
+
+        try:
+            limit = int(args.get('limit', 100))
+        except ValueError as e:
+            return (500, 'limit must be an integer.')
+
+        try:
+            skip = args.get('skip', 400)
+        except ValueError:
+            return (500, 'skip must be an integer.')
+
+        result = {
+            'where': where,
+            'order': order,
+            'limit': limit,
+            'skip': skip,
+            # 'keys' : keys
+            'exclude' : exclude,
+            'only' : only
+        }
+        return result
 
     @classmethod
     async def authenticated(cls, requests):
@@ -41,8 +89,7 @@ class APIHandler(HTTPMethodView):
             result = cls.KeyVerify(cls, app, appid, appkey)
 
         if result is False:
-            return json({'msg':'Unauthorized'}, 401)
-
+            return json({'msg': 'Unauthorized'}, 401)
 
     def KeyVerify(self, app, appid, appkey):
         # 根据 appid 与 appkey 验证权限
@@ -83,6 +130,6 @@ class APIHandler(HTTPMethodView):
         # except InvalidUsage as e:
         #     return json({'code':107, 'error':'Malformed json object. A json dictionary is expected.'})
         if not isinstance(requests.json, dict) or requests.json is None:
-            return json({'code':107, 'error':'Malformed json object. A json dictionary is expected.'})
+            return json({'code': 107, 'error': 'Malformed json object. A json dictionary is expected.'})
 
         return None

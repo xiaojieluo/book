@@ -1,7 +1,9 @@
 from mongoengine import (connect, Document, StringField, DictField, ReferenceField, IntField, ListField,
-                            BooleanField, ComplexDateTimeField, DateTimeField)
+                         BooleanField, ComplexDateTimeField, DateTimeField)
 from mongoengine.errors import NotUniqueError
-import time, datetime
+import time
+import datetime
+import json as pyjson
 
 connect('book')
 
@@ -15,17 +17,17 @@ class App(Document):
 class User(Document):
 
     # 用户名
-    username = StringField(required=True)
+    username = StringField(required=True, unique=True)
     # 密码
-    password = StringField(default='')
+    password = StringField()
     # 昵称
-    nickname = StringField(default='')
+    nickname = StringField(default='',unique=True)
     # 手机号码, unique
     phone = StringField(default='')
     # 邮箱
     email = StringField(default='')
     age = IntField(default=18)
-    tasks = ListField(ReferenceField('Task'))
+    tasks = ListField(ReferenceField('Task'), default=[])
     # 邮箱验证
     emailVerified = BooleanField(default=False)
     # 手机号码验证
@@ -36,6 +38,85 @@ class User(Document):
     updatedAt = ComplexDateTimeField()
 
     meta = {'strict': False}
+
+    @classmethod
+    def get_users(cls,where, raw=False, **kw):
+        '''
+        根据 where 查找指定的数据
+        Usage:
+
+            >>> for user in User.get_users(where):
+            >>>    users.append(user)
+
+            指定用户的objectid :
+            >>> user = next(User.get_users(where, id=<objectid>))
+
+            返回  User object:
+            >>> user = next(User.get_users(where, id=<objectid>, raw=True)).first()
+        return:
+            Generator
+        '''
+        users = cls.objects(__raw__=where['where'], **kw).order_by(
+            where['order']).limit(where['limit'])
+
+        if raw is True:
+            yield users
+        else:
+            results = []
+            for user in users:
+                body = pyjson.loads(user.to_json())
+                where['exclude'].append('_id')
+                where['exclude'].append('password')
+                where['exclude'].append('sessionToken')
+                for k in where['exclude']:
+                    try:
+                        del body[k]
+                    except KeyError:
+                        continue
+                for k in where['only']:
+                    body = {k:v for k, v in body.items() if k in where['only']}
+
+                body.update({
+                    'objectid': str(user.id),
+                    'createdAt': user.createdAt.isoformat(),
+                    'updatedAt': user.updatedAt.isoformat()
+                })
+                # print(body  )
+                # results.append(body)
+                yield body
+
+        # return results
+
+    # @classmethod
+    # def get_users(cls, where):
+    #     '''
+    #     根据 where 查找指定的数据
+    #     '''
+    #     users = cls.objects(__raw__=where['where']).order_by(
+    #         where['order']).limit(where['limit'])
+    #
+    #     results = []
+    #     for user in users:
+    #         body = pyjson.loads(user.to_json())
+    #         where['exclude'].append('_id')
+    #         where['exclude'].append('password')
+    #         where['exclude'].append('sessionToken')
+    #         for k in where['exclude']:
+    #             try:
+    #                 del body[k]
+    #             except KeyError:
+    #                 continue
+    #         for k in where['only']:
+    #             body = {k:v for k, v in body.items() if k in where['only']}
+    #
+    #         body.update({
+    #             'objectid': str(user.id),
+    #             'createdAt': user.createdAt.isoformat(),
+    #             'updatedAt': user.updatedAt.isoformat()
+    #         })
+    #         results.append(body)
+    #
+    #     return results
 
 
 class Task(Document):
@@ -50,6 +131,7 @@ class Task(Document):
     announcer = ReferenceField('User')
     own = ReferenceField('User')
     comments = ListField(DictField())
+
 
 class Log(Document):
     # 用户
@@ -86,8 +168,6 @@ class Log(Document):
     path = StringField()
     # 日志等级， 0级正常操作， 1级调试， 2级警告， 3级
     level = IntField(default=0)
-
-
 
 
 if __name__ == '__main__':

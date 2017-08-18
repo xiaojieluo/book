@@ -1,33 +1,105 @@
-from sanic.response import json
+from sanic.response import json, HTTPResponse
 from book.codes import CODES
 import hashlib
 import os
 from book.model import Log, App
 import datetime
 import redis
+from functools import wraps
+from bson import objectid
+
+# def authorized():
+#     def decorator(f):
+#         @wraps(f)
+#         async def decorated_function(request, *args, **kwargs):
+#             # run some method that checks the request
+#             # for the client's authorization status
+#             # is_authorized = check_request_for_authorization_status(request)
+#             is_authorized = True
+#             print("Auth ")
+#             print(request)
+#
+#             if is_authorized:
+#                 # the user is authorized.
+#                 # run the handler method and return the response
+#                 response = await f(request, *args, **kwargs)
+#                 return response
+#             else:
+#                 # the user is not authorized.
+#                 return json({'status': 'not_authorized'}, 403)
+#         return decorated_function
+#     return decorator
+
+def validate(*string, **kwargs):
+    '''
+    验证函数,
+    uid : objectid
+    '''
+    def decorator(f):
+        @wraps(f)
+        async def decorated_function(requests, *args, **kw):
+            validate = {
+                'uid' : validate_uid,
+                'session' : validate_session,
+            }
+            # print(kwargs)
+            # print(string)
+            for k in string:
+                if k in validate.keys():
+                    result = validate[k](requests, *args, **kw)
+                    if isinstance(result, HTTPResponse):
+                        return result
+            response = await f(requests, *args, **kw)
+            return response
+        return decorated_function
+    return decorator
+
+def validate_uid(requests, *args, **kw):
+    '''
+    valid user id
+    uid must be an objectid
+    '''
+    uid = kw.get('uid', '')
+    if not objectid.ObjectId.is_valid(uid):
+        return error(500, {'msg':'{} is not a valid ObjectId, it must be a 12-byte input or a 24-character hex string'.format(uid)})
+
+def validate_session(requests, *args, **kw):
+    '''
+    验证 session
+    '''
+    print("valid session")
+    return error(-1)
+    # return True
 
 
-def error(code, result = None,*args, **kw):
+def error(code, result=None, *args, **kw):
+    '''
+    return error code
+    '''
     if code in CODES:
         data = {
-            'body' : {'code' : code,
-                        'error' : CODES[code]},
-            'status' : 400
-            }
-        if result is not None:
-            data['body'].update(result)
+            'body': {'code': code,
+                     'error': CODES[code]},
+            'status': 400
+        }
     else:
         data = {
-            'body' :{'code':-1, 'error' : 'uncatch error:{}'.format(code)},
-            'status' : 400
-            }
+            'body': {'code': -1, 'error': 'uncatch error:{}'.format(code)},
+            'status': 400
+        }
+
+    if result is not None and isinstance(result, dict):
+        data['body'].update(result)
+
     return json(**data)
+
 
 def generateSessionToken():
     '''
     generate sessionToken
     '''
     return hashlib.sha1(os.urandom(24)).hexdigest()
+
 
 class log(object):
     '''
@@ -37,22 +109,22 @@ class log(object):
     def __init__(self, requests, user='', content='', level=0):
 
         self.data = {
-            'username' : user.username if user else '',
-            'content' : content,
-            'datetime' : datetime.datetime.utcnow(),
-            'method' : requests.method,
-            'version' : requests.version,
-            'ip' : requests.ip[0],
-            'port' : requests.ip[1],
-            'user_agent' : requests.headers.get('user-agent', ''),
-            'url' : requests.url,
+            'username': user.username if user else '',
+            'content': content,
+            'datetime': datetime.datetime.utcnow(),
+            'method': requests.method,
+            'version': requests.version,
+            'ip': requests.ip[0],
+            'port': requests.ip[1],
+            'user_agent': requests.headers.get('user-agent', ''),
+            'url': requests.url,
             # 'schema' : requests.schema,
-            'host' : requests.host,
-            'query_string' : requests.query_string,
-            'path' : requests.path,
-            'level' : level,
-            'app' : App.objects(appid=requests.headers.get('X-LC-Id', '')).first(),
-            'user' : user
+            'host': requests.host,
+            'query_string': requests.query_string,
+            'path': requests.path,
+            'level': level,
+            'app': App.objects(appid=requests.headers.get('X-LC-Id', '')).first(),
+            'user': user
         }
         self.save()
 
@@ -62,6 +134,7 @@ class log(object):
         '''
         log = Log(**self.data)
         log.save()
+
 
 class AccountLock(object):
     '''
@@ -155,11 +228,12 @@ class AccountLock(object):
             return self.r.ttl(self.key)
 
         return 0
-            # return self._ttl
+        # return self._ttl
 
     # @ttl.setter
     # def ttl(self, value):
     #     self._ttl = value
+
 
 if __name__ == '__main__':
     log()
